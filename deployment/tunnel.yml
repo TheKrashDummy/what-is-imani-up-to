@@ -1,0 +1,9 @@
+tunnel: 154f276f-7094-40ab-aec6-c4ca3ac9b48d
+credentials-file: /home/tkrashevsky/.cloudflared/154f276f-7094-40ab-aec6-c4ca3ac9b48d.json
+
+ingress:
+  - hostname: whatisimaniupto.org 
+    service: http://localhost:3000
+  - hostname: get.whatisimaniupto.org
+    service: http://localhost:5000
+  - service: http_status:404
