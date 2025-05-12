@@ -1,33 +1,39 @@
-from flask import Flask, send_file, make_response
+from flask import Flask, Response
 from flask_cors import CORS
 from picamera2 import Picamera2
-import time
+from picamera2.encoders import JpegEncoder
+from picamera2.outputs import FileOutput
+from threading import Condition
+
 import io
-import sys
-import json
+
+class StreamingOutput(io.BufferedIOBase):
+    def __init__(self):
+        self.frame = None
+        self.condition = Condition()
+    
+    def write(self, buf):
+        with self.condition:
+            self.frame = buf
+            self.condition.notify_all()
 
 app = Flask(__name__)
 CORS(app)
+
 picam2 = Picamera2()
-camera_config = picam2.create_still_configuration()
-picam2.configure(camera_config)
-picam2.start()
-time.sleep(2)  # Let camera warm up
+picam2.configure(picam2.create_video_configuration(main={"size": (640, 480)}))
+output = StreamingOutput()
+picam2.start_recording(JpegEncoder(), FileOutput(output))
 
-@app.route('/snapshot')
+def gen(output):
+    while True:
+        frame = output.frame
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+@app.route('/video-feed')
 def snapshot():
-    image_stream = io.BytesIO()
-    picam2.capture_file(image_stream, format='jpeg')
-    image_stream.seek(0)
-    resp = make_response(send_file(image_stream, mimetype='image/jpeg'))
-    resp.headers['Access-Control-Allow-Origin'] = '*' 
-
-    # Print headers to stderr for visibility
-    print("Response headers:", file=sys.stderr)
-    for header, value in resp.headers.items():
-        print(f"{header}: {value}", file=sys.stderr)
-
-    return resp
+    return Response(gen(output), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
